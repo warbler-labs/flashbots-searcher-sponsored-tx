@@ -9,7 +9,7 @@ import { checkSimulation, gasPriceToGwei, printTransactions } from "./utils";
 import { Approval721 } from "./engine/Approval721";
 import { MEMBERSHIP_ORCHESTRATOR_ABI, MEMBERSHIP_ORCHESTRATOR_ADDRESS } from "./engine/abis/MembershipOrchestrator";
 import { POOL_TOKEN_ABI, POOL_TOKEN_ADDRESS } from "./engine/abis/PoolToken";
-import { ERC20_ABI, FIDU_ADDRESS, GFI_ADDRESS, MPL_ADDRESS } from "./engine/abis/ERC20";
+import { ERC20_ABI, FIDU_ADDRESS, GFI_ADDRESS, MPL_ADDRESS, USDC_ADDRESS } from "./engine/abis/ERC20";
 import { SENIOR_POOL_ABI, SENIOR_POOL_ADDRESS } from "./engine/abis/SeniorPool";
 
 require('log-timestamp');
@@ -82,6 +82,7 @@ async function main() {
   const gfi = new Contract(GFI_ADDRESS, ERC20_ABI);
   const mpl = new Contract(MPL_ADDRESS, ERC20_ABI);
   const fidu = new Contract(FIDU_ADDRESS, ERC20_ABI);
+  const usdc = new Contract(USDC_ADDRESS, ERC20_ABI);
   const seniorPool = new Contract(SENIOR_POOL_ADDRESS, SENIOR_POOL_ABI);
 
   // TODO OPTIONAL (if they have rewards to claim): membership collectRewards()
@@ -113,6 +114,12 @@ async function main() {
     gasPrice: BigNumber.from(0),
   }];
 
+  const usdcBalance = await usdc.balanceOf(walletExecutor.address);
+  const usdc_transfersToRecipient = [{
+    ...(await usdc.populateTransaction.transfer(RECIPIENT, usdcBalance)),
+    gasPrice: BigNumber.from(0),
+  }];
+
   const poolToken_transfersToRecipient = [{
     // transfer the pool token taken out of membership
     ...(await poolTokens.populateTransaction.safeTransferFrom(walletExecutor.address, RECIPIENT, 652)),
@@ -136,7 +143,7 @@ async function main() {
 
   // Order of Operations:
   // 1. Withdraw assets from Membership (receive GFI & PT)
-  // 2. Claim SeniorPool WithdrawalRequest
+  // 2. Claim SeniorPool WithdrawalRequest (receive USDC)
   // 3. Cancel SeniorPool WithdrawalRequest (receive FIDU)
   // 4. Transfer PoolToken to Recipient
   // 5. Transfer FIDU to Recipient
@@ -146,6 +153,7 @@ async function main() {
     ...membership_withdrawAssets,
     ...seniorPool_manageWithdrawRequests,
     ...poolToken_transfersToRecipient,
+    ...usdc_transfersToRecipient,
     ...fidu_transfersToRecipient,
     ...gfi_transfersToRecipient,
     ...mpl_transfersToRecipient,
