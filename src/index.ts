@@ -143,9 +143,10 @@ async function main() {
 
   // Order of Operations:
   // 1. Withdraw assets from Membership (receive GFI & PT)
-  // 2. Claim SeniorPool WithdrawalRequest (receive USDC)
-  // 3. Cancel SeniorPool WithdrawalRequest (receive FIDU)
-  // 4. Transfer PoolToken to Recipient
+  // 2a. Claim SeniorPool WithdrawalRequest (receive USDC)
+  // 2b. Cancel SeniorPool WithdrawalRequest (receive FIDU)
+  // 3. Transfer PoolToken to Recipient
+  // 4. Transfer USDC to Recipient
   // 5. Transfer FIDU to Recipient
   // 6. Transfer GFI to Recipient
   // 7. Transfer MPL to Recipient
