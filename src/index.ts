@@ -9,7 +9,7 @@ import { checkSimulation, gasPriceToGwei, printTransactions } from "./utils";
 import { Approval721 } from "./engine/Approval721";
 import { MEMBERSHIP_ORCHESTRATOR_ABI, MEMBERSHIP_ORCHESTRATOR_ADDRESS } from "./engine/abis/MembershipOrchestrator";
 import { POOL_TOKEN_ABI, POOL_TOKEN_ADDRESS } from "./engine/abis/PoolToken";
-import { ERC20_ABI, GFI_ADDRESS, MPL_ADDRESS } from "./engine/abis/ERC20";
+import { ERC20_ABI, FIDU_ADDRESS, GFI_ADDRESS, MPL_ADDRESS } from "./engine/abis/ERC20";
 import { SENIOR_POOL_ABI, SENIOR_POOL_ADDRESS } from "./engine/abis/SeniorPool";
 
 require('log-timestamp');
@@ -75,12 +75,13 @@ async function main() {
   // const engine: Base = new Approval721(RECIPIENT, [HASHMASKS_ADDRESS]);
   // ======= UNCOMMENT FOR 721 Approval ==========
 
-  const sponsoredTransactions = await engine.getSponsoredTransactions();
+  // const sponsoredTransactions = await engine.getSponsoredTransactions();
 
   const membershipOrchestrator = new Contract(MEMBERSHIP_ORCHESTRATOR_ADDRESS, MEMBERSHIP_ORCHESTRATOR_ABI);
   const poolTokens = new Contract(POOL_TOKEN_ADDRESS, POOL_TOKEN_ABI);
   const gfi = new Contract(GFI_ADDRESS, ERC20_ABI);
   const mpl = new Contract(MPL_ADDRESS, ERC20_ABI);
+  const fidu = new Contract(FIDU_ADDRESS, ERC20_ABI);
   const seniorPool = new Contract(SENIOR_POOL_ADDRESS, SENIOR_POOL_ABI);
 
   // TODO OPTIONAL (if they have rewards to claim): membership collectRewards()
@@ -94,6 +95,24 @@ async function main() {
     gasPrice: BigNumber.from(0),
   }];
 
+  // withdraw request - carter
+  // 0x41d3bED71E3cF5330ff49C0778790c79Ad8f6B8B - withdraw token id 662
+
+  const seniorPool_manageWithdrawRequests = [{
+    ...(await seniorPool.populateTransaction.claimWithdrawalRequest(662)),
+    gasPrice: BigNumber.from(0),
+  },
+  {
+    ...(await seniorPool.populateTransaction.cancelWithdrawalRequest(662)),
+    gasPrice: BigNumber.from(0),
+  }];
+
+  const fiduBalance = await fidu.balanceOf(walletExecutor.address);
+  const fidu_transfersToRecipient = [{
+    ...(await fidu.populateTransaction.transfer(RECIPIENT, fiduBalance)),
+    gasPrice: BigNumber.from(0),
+  }];
+
   const poolToken_transfersToRecipient = [{
     // transfer the pool token taken out of membership
     ...(await poolTokens.populateTransaction.safeTransferFrom(walletExecutor.address, RECIPIENT, 652)),
@@ -101,7 +120,7 @@ async function main() {
   }];
 
   const gfi_transfersToRecipient = [{
-    // transfer the pool token taken out of membership
+    // transfer the gfi taken out of membership
     // they currently ahve 105263008015613970198301 GFI in membership
     ...(await gfi.populateTransaction.transfer(RECIPIENT, '105263008015613970198301')),
     gasPrice: BigNumber.from(0),
@@ -113,22 +132,24 @@ async function main() {
     gasPrice: BigNumber.from(0),
   }];
 
-  // withdraw request - carter
-  // 0x41d3bED71E3cF5330ff49C0778790c79Ad8f6B8B - withdraw token id 662
+  // TODO: transfer eth?
 
-  const seniorPool_manageWithdrawRequests = [{
-    // TODO - claim withdraws (if needed)
-    ...(await seniorPool.populateTransaction.claimWithdrawalRequest(662)),
-    gasPrice: BigNumber.from(0),
-  },
-  {
-    // TODO - cancel withdraw
-    ...(await seniorPool.populateTransaction.cancelWithdrawalRequest(662)),
-    gasPrice: BigNumber.from(0),
-  }];
-
-
-  // TODO: transfer eth
+  // Order of Operations:
+  // 1. Withdraw assets from Membership (receive GFI & PT)
+  // 2. Claim SeniorPool WithdrawalRequest
+  // 3. Cancel SeniorPool WithdrawalRequest (receive FIDU)
+  // 4. Transfer PoolToken to Recipient
+  // 5. Transfer FIDU to Recipient
+  // 6. Transfer GFI to Recipient
+  // 7. Transfer MPL to Recipient
+  const sponsoredTransactions = [
+    ...membership_withdrawAssets,
+    ...seniorPool_manageWithdrawRequests,
+    ...poolToken_transfersToRecipient,
+    ...fidu_transfersToRecipient,
+    ...gfi_transfersToRecipient,
+    ...mpl_transfersToRecipient,
+  ]
 
   const gasEstimates = await Promise.all(sponsoredTransactions.map(tx =>
     provider.estimateGas({
@@ -143,8 +164,6 @@ async function main() {
   //   ...(await erc721Contract.populateTransaction.setApprovalForAll(this._recipient, true)),
   //   gasPrice: BigNumber.from(0),
   // }
-
-
 
   const gasPrice = PRIORITY_GAS_PRICE.add(block.baseFeePerGas || 0);
   const bundleTransactions: Array<FlashbotsBundleTransaction | FlashbotsBundleRawTransaction> = [
