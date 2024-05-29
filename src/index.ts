@@ -200,7 +200,7 @@ async function main() {
   await printTransactions(bundleTransactions, signedBundle);
   const simulatedGasPrice = await checkSimulation(flashbotsProvider, signedBundle);
 
-  console.log(await engine.description())
+  // console.log(await engine.description())
 
   console.log(`Executor Account: ${walletExecutor.address}`)
   console.log(`Sponsor Account: ${walletSponsor.address}`)
