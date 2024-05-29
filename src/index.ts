@@ -66,13 +66,17 @@ if (!ETHEREUM_RPC_URL) {
 }
 
 async function main() {
+  console.log("Beginning recovery...");
+
   const provider = new providers.StaticJsonRpcProvider(ETHEREUM_RPC_URL);
 
   const walletExecutor = new Wallet(PRIVATE_KEY_EXECUTOR);
   const walletSponsor = new Wallet(PRIVATE_KEY_SPONSOR);
 
   const block = await provider.getBlock("latest");
+  console.log(`Recovery basis block: ${block.number}`);
 
+  console.log("Preparing contracts...");
   const membershipOrchestrator = new Contract(
     MEMBERSHIP_ORCHESTRATOR_ADDRESS,
     MEMBERSHIP_ORCHESTRATOR_ABI
@@ -84,8 +88,12 @@ async function main() {
   const usdc = new Contract(USDC_ADDRESS, ERC20_ABI);
   const seniorPool = new Contract(SENIOR_POOL_ADDRESS, SENIOR_POOL_ABI);
 
+  console.log("Preparing transactions...");
+
+  console.log("- Preparing membership rewards...");
   const membershipFiduRewards: BigNumber =
     await membershipOrchestrator.claimableRewards(walletExecutor.address);
+  console.log(`  - Pending fidu rewards: ${membershipFiduRewards.toNumber()}`);
   const membership_withdrawAssets = [
     {
       ...(await membershipOrchestrator.populateTransaction.collectRewards()),
@@ -104,10 +112,13 @@ async function main() {
     },
   ];
 
+  console.log("- Preparing withdrawal request...");
   // withdraw request - carter
   // withdraw token id 662
   const [, usdcWithdrawable, fiduRequested]: [unknown, BigNumber, BigNumber] =
     await seniorPool.withdrawalRequest(662);
+  console.log(`  - Withdrawable USDC: ${usdcWithdrawable.toNumber()}`);
+  console.log(`  - Fidu in request: ${fiduRequested.toNumber()}`);
 
   const seniorPool_manageWithdrawRequests = [
     // confirmed as of 5/28 there's nothing to claim. only add if this has changed
@@ -121,7 +132,13 @@ async function main() {
     },
   ];
 
+  console.log("- Preparing fidu transfer...");
+
   const fiduBalance: BigNumber = await fidu.balanceOf(walletExecutor.address);
+  console.log(`  - Current fidu balance: ${fiduBalance.toNumber()}`);
+  console.log(`  - Withdrawal request fidu: ${fiduRequested.toNumber()}`);
+  console.log(`  - Membership fidu: ${membershipFiduRewards.toNumber()}`);
+
   const fidu_transfersToRecipient = [
     {
       ...(await fidu.populateTransaction.transfer(
@@ -132,7 +149,12 @@ async function main() {
     },
   ];
 
+  console.log("- Preparing USDC transfer...");
+
   const usdcBalance: BigNumber = await usdc.balanceOf(walletExecutor.address);
+  console.log(`  - Current usdc balance: ${usdcBalance.toNumber()}`);
+  console.log(`  - Withdrawal request usdc: ${usdcWithdrawable.toNumber()}`);
+
   const usdc_transfersToRecipient = [
     {
       ...(await usdc.populateTransaction.transfer(
@@ -142,6 +164,8 @@ async function main() {
       gasPrice: BigNumber.from(0),
     },
   ];
+
+  console.log("- Preparing PoolToken transfer...");
 
   const poolToken_transfersToRecipient = [
     {
@@ -155,6 +179,8 @@ async function main() {
     },
   ];
 
+  console.log("- Preparing GFI transfer...");
+
   const gfi_transfersToRecipient = [
     {
       // transfer the gfi taken out of membership
@@ -167,7 +193,11 @@ async function main() {
     },
   ];
 
+  console.log("- Preparing MPL transfer...");
+
   const mplBalance = await mpl.balanceOf(walletExecutor.address);
+  console.log(`  - Current mpl balance: ${mplBalance.toNumber()}`);
+
   const mpl_transfersToRecipient = [
     {
       ...(await mpl.populateTransaction.transfer(RECIPIENT, mplBalance)),
@@ -176,6 +206,9 @@ async function main() {
   ];
 
   // TODO: transfer eth?
+  // [carter] - lets do this in a separate tx, idk how to estimate how much flashbots will take
+
+  console.log("✅ finished preparing transactions");
 
   // Order of Operations:
   // 1. Withdraw assets from Membership & claim rewards (receive GFI & PT)
@@ -195,6 +228,8 @@ async function main() {
     ...gfi_transfersToRecipient,
     ...mpl_transfersToRecipient,
   ];
+
+  console.log("Estimating gas...");
 
   const gasEstimates = await Promise.all(
     sponsoredTransactions.map((tx) =>
@@ -241,12 +276,13 @@ async function main() {
   );
   const signedBundle = await flashbotsProvider.signBundle(bundleTransactions);
   await printTransactions(bundleTransactions, signedBundle);
+
+  console.log("Simulating transactions...");
+
   const simulatedGasPrice = await checkSimulation(
     flashbotsProvider,
     signedBundle
   );
-
-  // console.log(await engine.description())
 
   console.log(`Executor Account: ${walletExecutor.address}`);
   console.log(`Sponsor Account: ${walletSponsor.address}`);
